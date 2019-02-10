@@ -1,0 +1,7 @@
+[package]
+name = "satinapi"
+version = "0.1.0"
+authors = ["pdelrieu"]
+
+[dependencies]
+#cbuf = "*"

@@ -1,0 +1,20 @@
+Reference; Value; Réf fab; Réf fab; Code commande; Distributeur; Prix
+P1;CONN_02X08;;Value;Value;Farnell;0.0
+P2;CONN_02X08;;Value;Value;Farnell;0.0
+P4;DIN_5;;SD-50BV;CP-3150-ND;Digikey;1.35
+R1;51;
+J1;JACK_mono;;PJ-301B;Value;Farnell;0.0
+J2;JACK_mono;;PJ-301B;Value;Farnell;0.0
+J3;JACK_mono;;PJ-301B;Value;Farnell;0.0
+J4;JACK_mono;;PJ-301B;Value;Farnell;0.0
+J5;JACK_mono;;PJ-301B;Value;Farnell;0.0
+J6;JACK_mono;;PJ-301B;Value;Farnell;0.0
+J7;JACK_stereo;;PJ301CM;Value;www.thonk.co.uk;0.0
+P5;Hole;;Value;Value;Farnell;0.0
+P6;Hole;;Value;Value;Farnell;0.0
+P7;Hole;;Value;Value;Farnell;0.0
+P8;Hole;;Value;Value;Farnell;0.0
+P3;DIN_5;;SD-50BV;CP-3150-ND ;Digikey;1.35
+P9;USB_OTG;;105133-0011 ;2614949;Farnell;0.0
+J8;JACK_stereo;;PJ301CM;Value;www.thonk.co.uk;0.0
+J9;JACK_mono;;PJ-301B;Value;Farnell;0.0
