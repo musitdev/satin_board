@@ -30,8 +30,8 @@ version = "0.2.4"
 features = ["const-fn"]
 
 [dependencies.stm32f7xx-hal]
-git = "https://github.com/mvertescher/stm32f7xx-hal"
-#path="../stm32f7xx-hal"
+#git = "https://github.com/mvertescher/stm32f7xx-hal"
+path="../../SDK/stm32f7xx-hal"
 
 [dependencies.cast]
 default-features = false
