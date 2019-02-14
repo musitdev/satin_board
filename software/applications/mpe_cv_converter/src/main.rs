@@ -30,6 +30,7 @@ use crate::hal::{
     delay::Delay,
     timer::{Timer, Event as TimerEvent},
     serial::{Rx, Serial, Tx, Error, Event},
+    dac::{Dac, DacWriter, DacWord},
 };
 use heapless;
 
@@ -42,10 +43,10 @@ const APP: () = {
 //    static mut LED: hal::gpio::gpiob::PB7<hal::gpio::Output<hal::gpio::PushPull>> = ();
     static mut TIMESTAMP: u64 = 0;
     static mut EVENT_TIMER: Timer<stm32f7::stm32f7x6::TIM2> = ();
-    static mut MESSAGE_BUF: heapless::spsc::Queue<satinapi::MidiEvent, heapless::consts::U32> = ();
+    static mut MESSAGE_BUF: heapless::spsc::Queue<satinapi::midi::MidiEvent, heapless::consts::U32> = ();
     static mut TX: Tx<stm32f7::stm32f7x6::USART2> = ();
     static mut RX: Rx<stm32f7::stm32f7x6::USART2> = ();
-    static mut RX_BUF : satinapi::MidiBuffer = ();
+    static mut RX_BUF : satinapi::midi::MidiBuffer = ();
 
     #[init] //(schedule = [blink])
     fn init() {
@@ -75,8 +76,9 @@ const APP: () = {
 
         //init dac
         hprintln!("before dac nit").unwrap();
-        let gpioa = device.GPIOA.split();
+/*        let gpioa = device.GPIOA.split();
         gpioa.pa4.into_floating_input();
+        gpioa.pa5.into_floating_input();
         rcc.apb1.enr().modify(|_, w| w.dacen().enabled()); //enable dac
         let dac =  device.DAC;
         //enable channel 1 and 2
@@ -90,15 +92,36 @@ const APP: () = {
         dac.cr.modify(|_, w| w.ten2().disabled());
 
         // write test data 8bit Right aligned
-        dac.dhr8r1.modify(|_, w| w.dacc1dhr().bits(127));
-        dac.dhr8r2.modify(|_, w| w.dacc2dhr().bits(127));
+        dac.dhr8r1.modify(|_, w| w.dacc1dhr().bits(250));
+        dac.dhr8r2.modify(|_, w| w.dacc2dhr().bits(50)); */
+
+        //init gpio
+        let gpioa = device.GPIOA.split();
+        gpioa.pa4.into_floating_input();
+        gpioa.pa5.into_floating_input();
+
+        let dac = Dac::new(device.DAC);
+        let (mut dac1, mut dac2) = dac.dacs();
+        dac1.enable();
+        dac1.disable_output_buffer();
+        dac1.disable_trigger();
+
+        dac2.enable();
+        dac2.disable_output_buffer();
+        dac2.disable_trigger();
+
+
+        //test write
+        dac1.write(DacWord::B8_ALIGN_R(128));
+        dac2.write(DacWord::B8_ALIGN_R(67));
+
         hprintln!("end dac init").unwrap();
 
         
         EVENT_TIMER = systick;
         TX = tx;
         RX = rx;
-        RX_BUF = satinapi::MidiBuffer::new();
+        RX_BUF = satinapi::midi::MidiBuffer::new();
         MESSAGE_BUF = heapless::spsc::Queue::new();
     }
 
@@ -128,7 +151,7 @@ const APP: () = {
         match resources.RX.read() {
             Ok(c) => {
                 if let Some(message) = resources.RX_BUF.push_byte(c) {
-                    let event = satinapi::MidiEvent{
+                    let event = satinapi::midi::MidiEvent{
                         message,
                         timestamp: *resources.TIMESTAMP,
                     };

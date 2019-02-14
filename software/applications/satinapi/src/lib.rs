@@ -1,9 +1,9 @@
 #![no_std]
 
-mod midi;
+pub mod midi;
 //mod utils;
 
-pub use midi::{MidiMessage, MidiEvent, MidiBuffer};
+//pub use midi::{MidiMessage, MidiEvent, MidiBuffer};
 
 #[cfg(test)]
 mod tests {
