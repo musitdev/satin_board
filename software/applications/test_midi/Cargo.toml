@@ -1,0 +1,11 @@
+[package]
+name = "test_midi"
+version = "0.1.0"
+authors = ["musitdev <philippe.delrieu@free.fr>"]
+edition = "2018"
+
+[dependencies]
+
+[dependencies.satinapi]
+path="../satinapi"
+version = "0.1.0"

@@ -1,6 +1,7 @@
 #![no_std]
 
 pub mod midi;
+pub mod mpe;
 //mod utils;
 
 //pub use midi::{MidiMessage, MidiEvent, MidiBuffer};

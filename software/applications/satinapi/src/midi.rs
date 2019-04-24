@@ -1,5 +1,5 @@
 // These are midi status message types as sent on the wire
-const STATUS_EVENT_NOTE_OFF: u8 = 0x80;
+/* const STATUS_EVENT_NOTE_OFF: u8 = 0x80;
 const STATUS_EVENT_NOTE_ON: u8 = 0x90;
 const STATUS_EVENT_VELOCITY_CHANGE: u8 = 0xA0;
 const STATUS_EVENT_CONTROL_CHANGE: u8 = 0xB0;
@@ -16,7 +16,89 @@ const STATUS_START: u8 = 0xFA;
 const STATUS_CONTINUE: u8 = 0xFB;
 const STATUS_STOP: u8 = 0xFC;
 const STATUS_ACTIVE_SENSE: u8 = 0xFE;
-const STATUS_RESET: u8 = 0xFF;
+const STATUS_RESET: u8 = 0xFF; */
+
+/*  NoteOff       = 0x8,
+    NoteOn        = 0x9,
+    PolyPressure  = 0xa,
+    CC            = 0xb,
+    ProgramChange = 0xc,
+    Aftertouch    = 0xd,
+    PitchBend     = 0xe
+*/
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MidiMessageStatus {
+    EventNoteOn,
+    EventNoteOff,
+    EventVelocityChange,
+    EventControlChange,
+    EventProgramChange,
+    AfterTouch,
+    PitchBend,
+    StartProprietary,
+    SongPosition,
+    SongSelect,
+    TuneRequest,
+    EndProprietary,
+    Sync,
+    Start,
+    Continue,
+    Stop,
+    ActiveSense,
+    Reset,
+}
+
+impl Into<u8> for MidiMessageStatus {
+    fn into(self) -> u8 {
+        match self {
+            MidiMessageStatus::EventNoteOff => 0x80,
+            MidiMessageStatus::EventNoteOn => 0x90,
+            MidiMessageStatus::EventVelocityChange => 0xA0,
+            MidiMessageStatus::EventControlChange => 0xB0,
+            MidiMessageStatus::EventProgramChange => 0xC0,
+            MidiMessageStatus::AfterTouch => 0xD0,
+            MidiMessageStatus::PitchBend => 0xE0,
+            MidiMessageStatus::StartProprietary => 0xF0,
+            MidiMessageStatus::SongPosition => 0xF2,
+            MidiMessageStatus::SongSelect => 0xF3,
+            MidiMessageStatus::TuneRequest => 0xF6,
+            MidiMessageStatus::EndProprietary => 0xF7,
+            MidiMessageStatus::Sync => 0xF8,
+            MidiMessageStatus::Start => 0xFA,
+            MidiMessageStatus::Continue => 0xFB,
+            MidiMessageStatus::Stop => 0xFC,
+            MidiMessageStatus::ActiveSense => 0xFE,
+            MidiMessageStatus::Reset => 0xFF,
+        }
+    }
+}
+
+impl Into<MidiMessageStatus> for u8 {
+    fn into(self) -> MidiMessageStatus {
+        match self & 0xf0 {
+            0x80 => MidiMessageStatus::EventNoteOff,
+            0x90 => MidiMessageStatus::EventNoteOn,
+            0xA0 => MidiMessageStatus::EventVelocityChange,
+            0xB0 => MidiMessageStatus::EventControlChange,
+            0xC0 => MidiMessageStatus::EventProgramChange,
+            0xD0 => MidiMessageStatus::AfterTouch,
+            0xE0 => MidiMessageStatus::PitchBend,
+            0xF0 => MidiMessageStatus::StartProprietary,
+            0xF2 => MidiMessageStatus::SongPosition,
+            0xF3 => MidiMessageStatus::SongSelect,
+            0xF6 => MidiMessageStatus::TuneRequest,
+            0xF7 => MidiMessageStatus::EndProprietary,
+            0xF8 => MidiMessageStatus::Sync,
+            0xFA => MidiMessageStatus::Start,
+            0xFB => MidiMessageStatus::Continue,
+            0xFC => MidiMessageStatus::Stop,
+            0xFE => MidiMessageStatus::ActiveSense,
+            0xFF => MidiMessageStatus::Reset,
+            _ => MidiMessageStatus::Reset,
+        }
+    }
+}
 
 /// Represents a Midi message.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -27,12 +109,31 @@ pub struct MidiMessage {
 }
 
 impl MidiMessage {
+    pub fn is_message_of_status(&self, message_type: MidiMessageStatus) -> bool {
+        let status: u8 = message_type.into();
+        (self.status & 0xf0) == status
+    }
+
     pub fn is_not_on(&self) -> bool {
-      self.status == STATUS_EVENT_NOTE_ON
+        self.is_message_of_status(MidiMessageStatus::EventNoteOn)
     }
 
     pub fn is_not_off(&self) -> bool {
-      self.status == STATUS_EVENT_NOTE_OFF
+        self.is_message_of_status(MidiMessageStatus::EventNoteOff)
+    }
+
+    pub fn is_control_change(&self) -> bool {
+        self.is_message_of_status(MidiMessageStatus::EventControlChange)
+    }
+
+    // from 1 to 16.
+    pub fn get_channel(&self) -> u8 {
+        //filter for exclusive message
+        if (self.status & 0xf0) != 0xf0 {
+            (self.status & 0xf) + 1
+        } else {
+            0
+        }
     }
 }
 
