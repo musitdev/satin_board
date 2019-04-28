@@ -1,3 +1,11 @@
+# Compiled files
+*.o
+*.rlib
+*.dll
+*.DS_Store
+*.vscode
+*.idea
+
 **/*.rs.bk
 .#*
 .gdb_history

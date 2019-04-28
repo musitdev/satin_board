@@ -33,6 +33,16 @@ pub enum ControlValue {
     U16(u16),
 }
 
+impl Into<u16> for ControlValue {
+  fn into(self) -> u16 {
+    match self {
+    ControlValue::U8(v) => v as u16,
+    ControlValue::U14(v) => v as u16,
+    ControlValue::U16(v) => v as u16,        
+    }
+  }
+}
+
 impl ControlValue {
     pub fn new_u14(msb: u8, lsb: u8) -> ControlValue {
         let mut val: u16 = (msb & 0x7f).into();
