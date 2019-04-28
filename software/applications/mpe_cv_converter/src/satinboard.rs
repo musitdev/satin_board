@@ -1,25 +1,24 @@
+use nb;
 use stm32f7;
 use stm32f7xx_hal as hal;
-use nb;
 //use core::fmt::Write;
 //use cortex_m_rt::entry;
-use crate::ehal::spi::{Mode, Phase, Polarity};
 use crate::ehal::digital::OutputPin;
+use crate::ehal::spi::{Mode, Phase, Polarity};
 use crate::hal::{
     dac::{Dac, DacWord, DacWriter},
-//    delay::Delay,
-//    device,
+    //    delay::Delay,
+    //    device,
     gpio::*,
     prelude::*,
     serial::{Event, Serial},
     spi,
     spi::{NoMiso, Spi},
-//    timer::{Event as TimerEvent, Timer},
+    //    timer::{Event as TimerEvent, Timer},
 };
 use cortex_m_semihosting::hprintln;
 
 //pub const CONST_TIMER_FREQ: u32 = 1;
-
 
 /// SPI mode
 pub const MODE: Mode = Mode {
@@ -28,21 +27,21 @@ pub const MODE: Mode = Mode {
 };
 
 pub struct SatinBoard {
-    //		led_discovery: hal::gpio::gpiob::PB7<hal::gpio::Output<hal::gpio::PushPull>>
+    //      led_discovery: hal::gpio::gpiob::PB7<hal::gpio::Output<hal::gpio::PushPull>>
     pub led1: hal::gpio::gpioh::PH3<hal::gpio::Output<hal::gpio::PushPull>>,
     pub gate_out: hal::gpio::gpioa::PA9<hal::gpio::Output<hal::gpio::PushPull>>,
     pub clock_out: hal::gpio::gpioc::PC6<hal::gpio::Output<hal::gpio::PushPull>>,
     pub note_velocity_dac: Dac,
     pub note_voltage_switch: hal::gpio::gpioa::PA0<hal::gpio::Output<hal::gpio::PushPull>>,
     pub velocity_voltage_switch: hal::gpio::gpioa::PA1<hal::gpio::Output<hal::gpio::PushPull>>,
-        pub spi2: Spi<
+    pub spi2: Spi<
         stm32f7::stm32f7x6::SPI2,
         (
             gpiod::PD3<Alternate<AF5>>,
             spi::NoMiso,
             gpioi::PI3<Alternate<AF5>>,
         ),
-    >, 
+    >,
     pub nss_dac1: hal::gpio::gpioa::PA8<hal::gpio::Output<hal::gpio::PushPull>>,
     pub nss_dac2: hal::gpio::gpiod::PD8<hal::gpio::Output<hal::gpio::PushPull>>,
     pub nss_dac3: hal::gpio::gpiod::PD0<hal::gpio::Output<hal::gpio::PushPull>>,
@@ -51,18 +50,26 @@ pub struct SatinBoard {
 
 impl SatinBoard {
     pub fn output_note(&mut self, note: u8, velocity: u8) {
-        //hprintln!("mpe:{:?}", note).unwrap();
-        //enable gate out
-        self.gate_out.set_high();
-        //for test set dac1 level depend on the note. TODO convertion table.
-        //note
-        self.note_velocity_dac
-            .dac1()
-            .write(DacWord::B8_ALIGN_R(note));
-        //Velocity
-        self.note_velocity_dac
-            .dac2()
-            .write(DacWord::B8_ALIGN_R(velocity));
+        if velocity == 0 {
+            self.output_note_off();
+        } else {
+            //            hprintln!("no:{:?} v:{}", note, velocity).unwrap();
+            //enable gate out
+            self.gate_out.set_high();
+            //for test set dac1 level depend on the note. TODO convertion table.
+            //note
+            self.note_velocity_dac
+                .dac1()
+                .write(DacWord::B8_ALIGN_R(note * 2));
+            //Velocity
+            self.note_velocity_dac
+                .dac2()
+                .write(DacWord::B8_ALIGN_R(velocity * 2));
+        }
+    }
+    pub fn output_note_off(&mut self) {
+        //disable gate out
+        self.gate_out.set_low();
     }
 
     pub fn write_sp2_cv1(&mut self, data: u16) -> Result<(), nb::Error<stm32f7xx_hal::spi::Error>> {
@@ -85,30 +92,34 @@ impl SatinBoard {
         write_spi2(data, &mut self.spi2, &mut self.nss_dac4)?;
         Ok(())
     }
-
 }
 
-
-    fn write_spi2<PIN>(data: u16, spi2: &mut Spi<
+fn write_spi2<PIN>(
+    data: u16,
+    spi2: &mut Spi<
         stm32f7::stm32f7x6::SPI2,
         (
             gpiod::PD3<Alternate<AF5>>,
             spi::NoMiso,
             gpioi::PI3<Alternate<AF5>>,
-        ),>, nss: &mut PIN) -> Result<(), nb::Error<stm32f7xx_hal::spi::Error>> where PIN: OutputPin{
-        let valeur_dac: u16 = 0x3FFF & data; //clear control bit D15, D14
-        let valeur_dac: u16 = 0x4000 | valeur_dac; //set controle bit D14 up
+        ),
+    >,
+    nss: &mut PIN,
+) -> Result<(), nb::Error<stm32f7xx_hal::spi::Error>>
+where
+    PIN: OutputPin,
+{
+    let valeur_dac: u16 = 0x3FFF & data; //clear control bit D15, D14
+    let valeur_dac: u16 = 0x4000 | valeur_dac; //set controle bit D14 up
 
-        nss.set_low();
-        let msb = valeur_dac >> 8;
-        spi2.send(msb as u8)?; //MSB
-        spi2.send(valeur_dac as u8)?; //LSB
-        nss.set_high();
+    nss.set_low();
+    let msb = valeur_dac >> 8;
+    spi2.send(msb as u8)?; //MSB
+    spi2.send(valeur_dac as u8)?; //LSB
+    nss.set_high();
 
-        Ok(())
-
-    }
-
+    Ok(())
+}
 
 pub fn init_board(
     device: stm32f7::stm32f7x6::Peripherals,
@@ -180,24 +191,26 @@ pub fn init_board(
     dac2.disable_trigger();
 
     //test write
-    dac1.write(DacWord::B8_ALIGN_R(128));
+    dac1.write(DacWord::B8_ALIGN_R(250));
     dac2.write(DacWord::B8_ALIGN_R(67));
 
     hprintln!("end dac init").unwrap();
 
     //Configure Gate / Clock
     //clock out PC6
-    let clock_out: hal::gpio::gpioc::PC6<hal::gpio::Output<hal::gpio::PushPull>> =
+    let mut clock_out: hal::gpio::gpioc::PC6<hal::gpio::Output<hal::gpio::PushPull>> =
         gpioc.pc6.into_push_pull_output();
+    clock_out.set_low();
 
     // gate out PA9
-    let gate_out: hal::gpio::gpioa::PA9<hal::gpio::Output<hal::gpio::PushPull>> =
+    let mut gate_out: hal::gpio::gpioa::PA9<hal::gpio::Output<hal::gpio::PushPull>> =
         gpioa.pa9.into_push_pull_output();
+    gate_out.set_low();
 
     //Gate PA9 + invertion gate: PI8
     let mut invertion_gate: hal::gpio::gpioi::PI8<hal::gpio::Output<hal::gpio::PushPull>> =
         gpioi.pi8.into_push_pull_output();
-    invertion_gate.set_low();
+    invertion_gate.set_high();
 
     //clock out PC6 INVERSION_CLOCK PI9
     let mut invertion_clock: hal::gpio::gpioi::PI9<hal::gpio::Output<hal::gpio::PushPull>> =
@@ -286,6 +299,7 @@ pub fn init_board(
         nss_dac3,
         nss_dac4,
     };
+    hprintln!("end board init").unwrap();
 
     (tx, rx, board)
 }

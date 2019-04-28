@@ -28,10 +28,10 @@ use arraydeque::Wrapping;
 use heapless::consts::U64;
 use heapless::String;
 use rtfm::{app, Instant};
+use satinapi::mpe::MPEControl;
 use stm32f7xx_hal as hal;
 use stm32f7xx_hal::serial::Rx;
 use stm32f7xx_hal::serial::Tx;
-use satinapi::mpe::MPEControl;
 //use stm32f7xx_hal::timer::Timer;
 //use core::fmt::Write;
 //use cortex_m_rt::entry;
@@ -397,20 +397,25 @@ const APP: () = {
             match mpe_event {
                 satinapi::mpe::MPEEvent::NoEvent => {}
                 satinapi::mpe::MPEEvent::GlobalNoteChange { control, value } => {
-                    hprintln!("manage_midi_input MPEEvent::GlobalNoteChange control:{:?} value:{:?}", control, value).unwrap();
+                    hprintln!(
+                        "manage_midi_input MPEEvent::GlobalNoteChange control:{:?} value:{:?}",
+                        control,
+                        value
+                    )
+                    .unwrap();
                 }
                 satinapi::mpe::MPEEvent::PerNoteChange { control, value } => {
-                    if let Err(err) = match control {
+                    /*                    if let Err(err) = match control {
                         MPEControl::XAxis => resources.BOARD.write_sp2_cv1(value.into()),
                         MPEControl::YAxis => resources.BOARD.write_sp2_cv2(value.into()),
                         MPEControl::ZAxis => resources.BOARD.write_sp2_cv3(value.into()),
-                    }
-                    {
+                    } {
                         //TODO manage error
-                         hprintln!("SPI error:{:?}", err).unwrap();
-                    }
+                        hprintln!("SPI error:{:?}", err).unwrap();
+                    } */
                 }
                 satinapi::mpe::MPEEvent::NoteOn { note, velocity } => {
+                    //hprintln!("mpe:{:?}", note).unwrap();
                     resources.BOARD.output_note(note, velocity);
                     //hprintln!("mpe:{:?}", note).unwrap();
                     //enable gate out
@@ -430,14 +435,13 @@ const APP: () = {
                         .write(DacWord::B8_ALIGN_R(velocity)); */
                 }
                 satinapi::mpe::MPEEvent::NoteOff => {
-                    //disable gate out
-                    resources.BOARD.gate_out.set_low();
+                    resources.BOARD.output_note_off();
                 }
                 satinapi::mpe::MPEEvent::OtherMPE(midi_event) => {
                     //TODO send to the output
-                    spawn
-                        .show_string("manage_midi_input MPEEvent::OtherMPE.".into())
-                        .unwrap();
+                    /*                    spawn
+                    .show_string("manage_midi_input MPEEvent::OtherMPE.".into())
+                    .unwrap(); */
                 }
             };
 
