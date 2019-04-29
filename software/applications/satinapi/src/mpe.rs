@@ -34,13 +34,13 @@ pub enum ControlValue {
 }
 
 impl Into<u16> for ControlValue {
-  fn into(self) -> u16 {
-    match self {
-    ControlValue::U8(v) => v as u16,
-    ControlValue::U14(v) => v as u16,
-    ControlValue::U16(v) => v as u16,        
+    fn into(self) -> u16 {
+        match self {
+            ControlValue::U8(v) => v as u16,
+            ControlValue::U14(v) => v as u16,
+            ControlValue::U16(v) => v as u16,
+        }
     }
-  }
 }
 
 impl ControlValue {

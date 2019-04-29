@@ -1,5 +1,6 @@
 #![no_std]
 
+pub mod cv;
 pub mod midi;
 pub mod mpe;
 //mod utils;

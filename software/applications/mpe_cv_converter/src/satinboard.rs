@@ -16,7 +16,9 @@ use crate::hal::{
     spi::{NoMiso, Spi},
     //    timer::{Event as TimerEvent, Timer},
 };
+use cortex_m::peripheral::DWT;
 use cortex_m_semihosting::hprintln;
+use nb::block;
 
 //pub const CONST_TIMER_FREQ: u32 = 1;
 
@@ -42,6 +44,8 @@ pub struct SatinBoard {
             gpioi::PI3<Alternate<AF5>>,
         ),
     >,
+    pub dac1cv_clear: hal::gpio::gpioi::PI2<hal::gpio::Output<hal::gpio::PushPull>>,
+
     pub nss_dac1: hal::gpio::gpioa::PA8<hal::gpio::Output<hal::gpio::PushPull>>,
     pub nss_dac2: hal::gpio::gpiod::PD8<hal::gpio::Output<hal::gpio::PushPull>>,
     pub nss_dac3: hal::gpio::gpiod::PD0<hal::gpio::Output<hal::gpio::PushPull>>,
@@ -53,14 +57,15 @@ impl SatinBoard {
         if velocity == 0 {
             self.output_note_off();
         } else {
-            //            hprintln!("no:{:?} v:{}", note, velocity).unwrap();
+            let cv_note = crate::satinapi::cv::convert_note_to_cv(note, 0);
+            //hprintln!("no:{:?} cv:{:?} v:{}", note, cv_note, velocity).unwrap();
             //enable gate out
             self.gate_out.set_high();
             //for test set dac1 level depend on the note. TODO convertion table.
             //note
             self.note_velocity_dac
                 .dac1()
-                .write(DacWord::B8_ALIGN_R(note * 2));
+                .write(DacWord::B8_ALIGN_R(cv_note));
             //Velocity
             self.note_velocity_dac
                 .dac2()
@@ -74,21 +79,29 @@ impl SatinBoard {
 
     pub fn write_sp2_cv1(&mut self, data: u16) -> Result<(), nb::Error<stm32f7xx_hal::spi::Error>> {
         //use dac1 nns to low to selec the dac.
+        //        self.dac1cv_clear.set_low();
+        //        self.dac1cv_clear.set_high();
         write_spi2(data, &mut self.spi2, &mut self.nss_dac1)?;
         Ok(())
     }
     pub fn write_sp2_cv2(&mut self, data: u16) -> Result<(), nb::Error<stm32f7xx_hal::spi::Error>> {
         //use dac1 nns to low to selec the dac.
+        //        self.dac1cv_clear.set_low();
+        //        self.dac1cv_clear.set_high();
         write_spi2(data, &mut self.spi2, &mut self.nss_dac2)?;
         Ok(())
     }
     pub fn write_sp2_cv3(&mut self, data: u16) -> Result<(), nb::Error<stm32f7xx_hal::spi::Error>> {
         //use dac1 nns to low to selec the dac.
+        //        self.dac1cv_clear.set_low();
+        //        self.dac1cv_clear.set_high();
         write_spi2(data, &mut self.spi2, &mut self.nss_dac3)?;
         Ok(())
     }
     pub fn write_sp2_cv4(&mut self, data: u16) -> Result<(), nb::Error<stm32f7xx_hal::spi::Error>> {
         //use dac1 nns to low to selec the dac.
+        //        self.dac1cv_clear.set_low();
+        //        self.dac1cv_clear.set_high();
         write_spi2(data, &mut self.spi2, &mut self.nss_dac4)?;
         Ok(())
     }
@@ -113,9 +126,23 @@ where
     let valeur_dac: u16 = 0x4000 | valeur_dac; //set controle bit D14 up
 
     nss.set_low();
-    let msb = valeur_dac >> 8;
-    spi2.send(msb as u8)?; //MSB
-    spi2.send(valeur_dac as u8)?; //LSB
+    if let Err(err) = block!(spi2.send_only_16b(valeur_dac)) {
+        return Err(nb::Error::Other(err));
+    }
+    /*    if let Err(err) = spi2.read() {
+        //read one time at the end to end the transation and way the end of the send
+        match err {
+            nb::Error::WouldBlock => (), //do  nothing
+            _ => return Err(nb::Error::Other(spi::Error::EndTranscationReadError)),
+        }
+    }
+    if let Err(err) = spi2.read() {
+        //read one time at the end to end the transation and way the end of the send
+        match err {
+            nb::Error::WouldBlock => (), //do  nothing
+            _ => return Err(nb::Error::Other(spi::Error::EndTranscationReadError)),
+        }
+    } */
     nss.set_high();
 
     Ok(())
@@ -131,6 +158,8 @@ pub fn init_board(
 ) {
     let rcc = device.RCC.constrain();
     let clocks = rcc.cfgr.sysclk(216.mhz()).freeze();
+
+    unsafe { (*DWT::ptr()).lar.write(0xC5ACCE55) };
 
     //        let clocks = rcc.cfgr.sysclk(180.mhz()).freeze();
     //    let mut systick = Timer::tim2(device.TIM2, CONST_TIMER_FREQ.hz(), clocks, &mut rcc.apb1);
@@ -191,8 +220,8 @@ pub fn init_board(
     dac2.disable_trigger();
 
     //test write
-    dac1.write(DacWord::B8_ALIGN_R(250));
-    dac2.write(DacWord::B8_ALIGN_R(67));
+    dac1.write(DacWord::B8_ALIGN_R(0));
+    dac2.write(DacWord::B8_ALIGN_R(0));
 
     hprintln!("end dac init").unwrap();
 
@@ -205,12 +234,12 @@ pub fn init_board(
     // gate out PA9
     let mut gate_out: hal::gpio::gpioa::PA9<hal::gpio::Output<hal::gpio::PushPull>> =
         gpioa.pa9.into_push_pull_output();
-    gate_out.set_low();
+    gate_out.set_high();
 
     //Gate PA9 + invertion gate: PI8
     let mut invertion_gate: hal::gpio::gpioi::PI8<hal::gpio::Output<hal::gpio::PushPull>> =
         gpioi.pi8.into_push_pull_output();
-    invertion_gate.set_high();
+    invertion_gate.set_low();
 
     //clock out PC6 INVERSION_CLOCK PI9
     let mut invertion_clock: hal::gpio::gpioi::PI9<hal::gpio::Output<hal::gpio::PushPull>> =
@@ -261,17 +290,17 @@ pub fn init_board(
 
     //DAC-CV CV3:
 
-    //SWITCH_CV_n3 switch 0-10 / -5,5v  PB14
+    //SWITCH_CV_n1 switch 0-10 / -5,5v  PB14
     let mut cv3_voltage_switch: hal::gpio::gpiob::PB14<hal::gpio::Output<hal::gpio::PushPull>> =
         gpiob.pb14.into_push_pull_output();
-    cv3_voltage_switch.set_low();
+    cv3_voltage_switch.set_high();
 
-    //SWITCH_CVn3_OUTSwitch 0-5v ou (0-10 / -5,5v)  PB11
+    //SWITCH_CVn2_OUTSwitch 0-5v ou (0-10 / -5,5v)  PB11
     let mut cv3_end_voltage_switch: hal::gpio::gpiob::PB11<hal::gpio::Output<hal::gpio::PushPull>> =
         gpiob.pb11.into_push_pull_output();
-    cv3_end_voltage_switch.set_low();
+    cv3_end_voltage_switch.set_high();
 
-    //SWITCH_CV_n4 switch 0-10 / -5,5v  PH12
+    //SWITCH_CV_n3 switch 0-10 / -5,5v  PH12
     let mut cv4_voltage_switch: hal::gpio::gpioh::PH12<hal::gpio::Output<hal::gpio::PushPull>> =
         gpioh.ph12.into_push_pull_output();
     cv4_voltage_switch.set_low();
@@ -283,7 +312,7 @@ pub fn init_board(
 
     //switch CV(5-6) out or  stéreo DAC:   SWITCH_CV_STEREO OUT: PG2
     let mut cv_st_out_switch = gpiog.pg2.into_push_pull_output();
-    cv_st_out_switch.set_high(); //no data
+    cv_st_out_switch.set_low(); //no data
 
     let board = SatinBoard {
         //      led_discovery: hal::gpio::gpiob::PB7<hal::gpio::Output<hal::gpio::PushPull>>
@@ -294,6 +323,7 @@ pub fn init_board(
         note_voltage_switch,
         velocity_voltage_switch,
         spi2,
+        dac1cv_clear,
         nss_dac1,
         nss_dac2,
         nss_dac3,
