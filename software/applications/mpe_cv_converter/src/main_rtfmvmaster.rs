@@ -66,11 +66,13 @@ const APP: () = {
     static mut BOARD: crate::satinboard::SatinBoard = ();
 
     #[init(schedule = [tick])]
-    fn init() -> init::LateResources {
-        let device: stm32f7::stm32f7x6::Peripherals = device;
+    fn init(c: init::Context) -> init::LateResources {
+        let device: stm32f7::stm32f7x6::Peripherals = c.device;
 
         let (tx, rx, mut satinboard) = crate::satinboard::init_board(device);
-        schedule.tick(Instant::now() + 8_000_000.cycles()).unwrap();
+        c.schedule
+            .tick(Instant::now() + 8_000_000.cycles())
+            .unwrap();
 
         //for test
         satinboard.write_sp2_cv1(5342);
@@ -102,11 +104,11 @@ const APP: () = {
 
     // `SHARED` can be access from this context
     #[task(priority = 1, resources = [TIMESTAMP, TX,ON, BOARD], schedule = [tick])]
-    fn tick() {
+    fn tick(mut c: tick::Context) {
         //        static mut BLINK: bool = false;
-        resources.TIMESTAMP.lock(|timestamp| *timestamp += 1);
+        c.resources.TIMESTAMP.lock(|timestamp| *timestamp += 1);
         //        *resources.TIMESTAMP = *resources.TIMESTAMP + 1;
-        resources.TX.lock(|tx| {
+        c.resources.TX.lock(|tx| {
             [0x90 as u8, 0x35 as u8, 0x15 as u8].iter().for_each(|b| {
                 //write_byte(*b, &mut tx);
                 /*            if resources.MIDIOUT_BUF.enqueue(*b).is_err() {
@@ -116,49 +118,60 @@ const APP: () = {
         });
 
         let mut ison = false;
-        resources.ON.lock(|on| ison = *on);
+        c.resources.ON.lock(|on| {
+            ison = *on;
+            *on = !*on;
+        });
         if ison {
-            resources.BOARD.lock(|board| board.led1.set_high());
+            c.resources.BOARD.lock(|board| board.led1.set_high());
         } else {
-            resources.BOARD.lock(|board| board.led1.set_low());
+            c.resources.BOARD.lock(|board| board.led1.set_low());
         }
+
         hprintln!("on{}", ison).unwrap();
         //     resources.EVENT_TIMER.start(CONST_TIMER_FREQ.hz());
-        schedule.tick(Instant::now() + 8_000_000.cycles()).unwrap();
+        c.schedule
+            .tick(Instant::now() + 8_000_000.cycles())
+            .unwrap();
     }
 
-    #[interrupt(priority = 4, resources=[RX,RX_BUF, TX, BOARD, MESSAGE_BUF, TIMESTAMP, ON])]
-    fn USART2() {
-        match block!(resources.RX.read()) {
-            Ok(c) => {
-                //hprintln!("c:{}", c).unwrap();
-                if let Some(message) = resources.RX_BUF.push_byte(c) {
+    #[interrupt(priority = 4, resources=[RX,RX_BUF, MESSAGE_BUF, TIMESTAMP, ON], spawn = [manage_midi_input, show_error, show_string])]
+    fn USART2(mut c: USART2::Context) {
+        match block!(c.resources.RX.read()) {
+            Ok(d) => {
+                //hprintln!("d:{}", d).unwrap();
+                if let Some(message) = c.resources.RX_BUF.push_byte(d) {
                     let event = satinapi::midi::MidiEvent {
                         message,
-                        timestamp: *resources.TIMESTAMP,
+                        timestamp: *c.resources.TIMESTAMP,
                     };
 
-                    if resources.MESSAGE_BUF.push_front(event).is_some() {
-
+                    if c.resources.MESSAGE_BUF.push_front(event).is_some() {
+                        c.spawn
+                            .show_string("Error input midi buf queue full lost byte.".into())
+                            .unwrap();
                     } else {
                         //TODO use message to send the event.
+                        c.spawn.manage_midi_input().unwrap(); //fail if the 4 capacity task is currently executing.
                     }
                 }
-                *resources.ON = !*resources.ON;
+                *c.resources.ON = !*(c.resources).ON;
             }
-            Err(e) => {}
+            Err(e) => {
+                c.spawn.show_error(nb::Error::Other(e)).unwrap();
+            }
         }
     }
 
-    /*    #[task(priority = 2, resources=[MESSAGE_BUF, TX, BOARD, MPE_MANAGER], spawn = [show_error, show_string], capacity = 4)]
-    fn manage_midi_input() {
+    #[task(priority = 2, resources=[MESSAGE_BUF, TX, BOARD, MPE_MANAGER], spawn = [show_error, show_string], capacity = 4)]
+    fn manage_midi_input(mut c: manage_midi_input::Context) {
         //hprintln!("manage_usart_input").unwrap();
         let mut mess_opt = None;
-        resources
+        c.resources
             .MESSAGE_BUF
             .lock(|buff| mess_opt = buff.pop_front());
         if let Some(midi_event) = mess_opt {
-            let mpe_event = resources.MPE_MANAGER.manage_message(midi_event.message);
+            let mpe_event = c.resources.MPE_MANAGER.manage_message(midi_event.message);
             //hprintln!("manage_midi_input mpe_event:{:?}", mpe_event).unwrap();
             match mpe_event {
                 satinapi::mpe::MPEEvent::NoEvent => {}
@@ -172,9 +185,9 @@ const APP: () = {
                 }
                 satinapi::mpe::MPEEvent::PerNoteChange { control, value } => {
                     if let Err(err) = match control {
-                        MPEControl::XAxis => resources.BOARD.write_sp2_cv1(value.into()),
-                        MPEControl::YAxis => resources.BOARD.write_sp2_cv2(value.into()),
-                        MPEControl::ZAxis => resources.BOARD.write_sp2_cv3(value.into()),
+                        MPEControl::XAxis => c.resources.BOARD.write_sp2_cv1(value.into()),
+                        MPEControl::YAxis => c.resources.BOARD.write_sp2_cv2(value.into()),
+                        MPEControl::ZAxis => c.resources.BOARD.write_sp2_cv3(value.into()),
                     } {
                         //TODO manage error
                         hprintln!("SPI error:{:?}", err).unwrap();
@@ -182,15 +195,15 @@ const APP: () = {
                 }
                 satinapi::mpe::MPEEvent::NoteOn { note, velocity } => {
                     //hprintln!("mpe:{:?}", note).unwrap();
-                    resources.BOARD.output_note(note, velocity);
+                    c.resources.BOARD.output_note(note, velocity);
                 }
                 satinapi::mpe::MPEEvent::NoteOff => {
-                    resources.BOARD.output_note_off();
+                    c.resources.BOARD.output_note_off();
                 }
                 satinapi::mpe::MPEEvent::OtherMPE(midi_event) => {
                     //TODO write to the output.
                     let buf: [u8; 3] = midi_event.into();
-                    resources.TX.lock(|tx| {
+                    c.resources.TX.lock(|tx| {
                         buf.iter().for_each(|b| {
                             //write_byte(*b, &mut tx);
                         })
@@ -200,25 +213,22 @@ const APP: () = {
 
             //hprintln!("send event with time:{}", event.timestamp).unwrap();
         }
-    } */
+    }
 
-    /*    #[task]
-    fn show_error(value: nb::Error<stm32f7xx_hal::serial::Error>) {
+    #[task]
+    fn show_error(_: show_error::Context, value: nb::Error<stm32f7xx_hal::serial::Error>) {
         hprintln!("serail error:{:?}", value).unwrap();
     }
 
     #[task]
-    fn show_string(value: String<U64>) {
+    fn show_string(_: show_string::Context, value: String<U64>) {
         hprintln!("{:?}", value).unwrap();
-    } */
+    }
 
     // Interrupt handlers used to dispatch software tasks. One interrupt per task.
     extern "C" {
-        fn USART1();
-    //        fn USART3();
-    //        fn UART4();
-    //        fn TIM2();
-    //        fn TIM3();
+        fn USART3();
+        fn TIM3();
     }
 };
 

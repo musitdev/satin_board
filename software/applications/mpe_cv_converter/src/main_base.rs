@@ -127,7 +127,7 @@ const APP: () = {
         schedule.tick(Instant::now() + 8_000_000.cycles()).unwrap();
     }
 
-    #[interrupt(priority = 4, resources=[RX,RX_BUF, TX, BOARD, MESSAGE_BUF, TIMESTAMP, ON])]
+    #[interrupt(priority = 4, resources=[RX,RX_BUF, MESSAGE_BUF, TIMESTAMP, ON], spawn = [manage_midi_input, show_error, show_string])]
     fn USART2() {
         match block!(resources.RX.read()) {
             Ok(c) => {
@@ -139,18 +139,23 @@ const APP: () = {
                     };
 
                     if resources.MESSAGE_BUF.push_front(event).is_some() {
-
+                        spawn
+                            .show_string("Error input midi buf queue full lost byte.".into())
+                            .unwrap();
                     } else {
                         //TODO use message to send the event.
+                        spawn.manage_midi_input().unwrap(); //fail if the 4 capacity task is currently executing.
                     }
                 }
                 *resources.ON = !*resources.ON;
             }
-            Err(e) => {}
+            Err(e) => {
+                spawn.show_error(nb::Error::Other(e)).unwrap();
+            }
         }
     }
 
-    /*    #[task(priority = 2, resources=[MESSAGE_BUF, TX, BOARD, MPE_MANAGER], spawn = [show_error, show_string], capacity = 4)]
+    #[task(priority = 2, resources=[MESSAGE_BUF, TX, BOARD, MPE_MANAGER], spawn = [show_error, show_string], capacity = 4)]
     fn manage_midi_input() {
         //hprintln!("manage_usart_input").unwrap();
         let mut mess_opt = None;
@@ -200,9 +205,9 @@ const APP: () = {
 
             //hprintln!("send event with time:{}", event.timestamp).unwrap();
         }
-    } */
+    }
 
-    /*    #[task]
+    #[task]
     fn show_error(value: nb::Error<stm32f7xx_hal::serial::Error>) {
         hprintln!("serail error:{:?}", value).unwrap();
     }
@@ -210,15 +215,15 @@ const APP: () = {
     #[task]
     fn show_string(value: String<U64>) {
         hprintln!("{:?}", value).unwrap();
-    } */
+    }
 
     // Interrupt handlers used to dispatch software tasks. One interrupt per task.
     extern "C" {
+        fn USART3();
         fn USART1();
-    //        fn USART3();
-    //        fn UART4();
-    //        fn TIM2();
-    //        fn TIM3();
+        fn UART4();
+        fn TIM2();
+        fn TIM3();
     }
 };
 
