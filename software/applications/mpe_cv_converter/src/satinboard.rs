@@ -3,7 +3,7 @@ use stm32f7;
 use stm32f7xx_hal as hal;
 //use core::fmt::Write;
 //use cortex_m_rt::entry;
-use crate::ehal::digital::OutputPin;
+use crate::ehal::digital::v2::OutputPin;
 use crate::ehal::spi::{Mode, Phase, Polarity};
 use crate::hal::{
     dac::{Dac, DacWord, DacWriter},
@@ -125,7 +125,8 @@ where
     let valeur_dac: u16 = 0x3FFF & data; //clear control bit D15, D14
     let valeur_dac: u16 = 0x4000 | valeur_dac; //set controle bit D14 up
 
-    nss.set_low();
+    nss.set_low()
+        .unwrap_or_else(|_| hprintln!("write_spi2 nss set low error.").unwrap());
     if let Err(err) = block!(spi2.send_only_16b(valeur_dac)) {
         return Err(nb::Error::Other(err));
     }
@@ -143,7 +144,8 @@ where
             _ => return Err(nb::Error::Other(spi::Error::EndTranscationReadError)),
         }
     } */
-    nss.set_high();
+    nss.set_high()
+        .unwrap_or_else(|_| hprintln!("write_spi2 nss set high error.").unwrap());
 
     Ok(())
 }
@@ -190,18 +192,23 @@ pub fn init_board(
     //init led 1 to high
     let mut led1: hal::gpio::gpioh::PH3<hal::gpio::Output<hal::gpio::PushPull>> =
         gpioh.ph3.into_push_pull_output();
-    led1.set_high();
+    led1.set_high()
+        .unwrap_or_else(|_| hprintln!("init_board led1 set high error.").unwrap());
 
     //init STM32 dac
     //SWITCH_NOTE 0-10V / -5,5V: PA0
     let mut note_voltage_switch: hal::gpio::gpioa::PA0<hal::gpio::Output<hal::gpio::PushPull>> =
         gpioa.pa0.into_push_pull_output();
-    note_voltage_switch.set_low();
+    note_voltage_switch
+        .set_low()
+        .unwrap_or_else(|_| hprintln!("init_board note_voltage_switch set low error.").unwrap());
 
     //  SWITCH_VELOCITE 0-10V / -5,5V: PA1
     let mut velocity_voltage_switch: hal::gpio::gpioa::PA1<hal::gpio::Output<hal::gpio::PushPull>> =
         gpioa.pa1.into_push_pull_output();
-    velocity_voltage_switch.set_low();
+    velocity_voltage_switch.set_low().unwrap_or_else(|_| {
+        hprintln!("init_board velocity_voltage_switch set low error.").unwrap()
+    });
 
     //Dac1 pin CV Note: ST_DAC_OUT1 PA4
     let dac1_pin = gpioa.pa4.into_analog_output();
@@ -229,39 +236,55 @@ pub fn init_board(
     //clock out PC6
     let mut clock_out: hal::gpio::gpioc::PC6<hal::gpio::Output<hal::gpio::PushPull>> =
         gpioc.pc6.into_push_pull_output();
-    clock_out.set_low();
+    clock_out
+        .set_low()
+        .unwrap_or_else(|_| hprintln!("init_board clock_out set low error.").unwrap());
 
     // gate out PA9
     let mut gate_out: hal::gpio::gpioa::PA9<hal::gpio::Output<hal::gpio::PushPull>> =
         gpioa.pa9.into_push_pull_output();
-    gate_out.set_high();
+    gate_out
+        .set_high()
+        .unwrap_or_else(|_| hprintln!("init_board gate_out set_high error.").unwrap());
 
     //Gate PA9 + invertion gate: PI8
     let mut invertion_gate: hal::gpio::gpioi::PI8<hal::gpio::Output<hal::gpio::PushPull>> =
         gpioi.pi8.into_push_pull_output();
-    invertion_gate.set_low();
+    invertion_gate
+        .set_low()
+        .unwrap_or_else(|_| hprintln!("init_board invertion_gate set low error.").unwrap());
 
     //clock out PC6 INVERSION_CLOCK PI9
     let mut invertion_clock: hal::gpio::gpioi::PI9<hal::gpio::Output<hal::gpio::PushPull>> =
         gpioi.pi9.into_push_pull_output();
-    invertion_clock.set_low();
+    invertion_clock
+        .set_low()
+        .unwrap_or_else(|_| hprintln!("init_board invertion_clock set low error.").unwrap());
 
     //4 SPI CV dac.
     //Dac1 CS PA8
     let mut nss_dac1 = gpioa.pa8.into_push_pull_output();
-    nss_dac1.set_high(); //no data
+    nss_dac1
+        .set_high()
+        .unwrap_or_else(|_| hprintln!("init_board nss_dac1 set_high error.").unwrap()); //no data
 
     //Dac2 CS PD8
     let mut nss_dac2 = gpiod.pd8.into_push_pull_output();
-    nss_dac2.set_high(); //no data
+    nss_dac2
+        .set_high()
+        .unwrap_or_else(|_| hprintln!("init_board nss_dac2 set_high error.").unwrap()); //no data
 
     //DAC3_CS PD0
     let mut nss_dac3 = gpiod.pd0.into_push_pull_output();
-    nss_dac3.set_high(); //no data
+    nss_dac3
+        .set_high()
+        .unwrap_or_else(|_| hprintln!("init_board nss_dac3 set_high error.").unwrap()); //no data
 
     //DAC4_CS PD1
     let mut nss_dac4 = gpiod.pd1.into_push_pull_output();
-    nss_dac4.set_high(); //no data
+    nss_dac4
+        .set_high()
+        .unwrap_or_else(|_| hprintln!("init_board nss_dac4 set_high error.").unwrap()); //no data
 
     //Dac1, Dac2, Dac 3 Dac 4 are controled via SPI2
     //SPI2:
@@ -286,33 +309,45 @@ pub fn init_board(
     //DAC-CV clear init PI2
     let mut dac1cv_clear: hal::gpio::gpioi::PI2<hal::gpio::Output<hal::gpio::PushPull>> =
         gpioi.pi2.into_push_pull_output();
-    dac1cv_clear.set_high();
+    dac1cv_clear
+        .set_high()
+        .unwrap_or_else(|_| hprintln!("init_board dac1cv_clear set_high error.").unwrap());
 
     //DAC-CV CV3:
 
     //SWITCH_CV_n1 switch 0-10 / -5,5v  PB14
     let mut cv3_voltage_switch: hal::gpio::gpiob::PB14<hal::gpio::Output<hal::gpio::PushPull>> =
         gpiob.pb14.into_push_pull_output();
-    cv3_voltage_switch.set_high();
+    cv3_voltage_switch
+        .set_high()
+        .unwrap_or_else(|_| hprintln!("init_board cv3_voltage_switch set_high error.").unwrap());
 
     //SWITCH_CVn2_OUTSwitch 0-5v ou (0-10 / -5,5v)  PB11
     let mut cv3_end_voltage_switch: hal::gpio::gpiob::PB11<hal::gpio::Output<hal::gpio::PushPull>> =
         gpiob.pb11.into_push_pull_output();
-    cv3_end_voltage_switch.set_high();
+    cv3_end_voltage_switch.set_high().unwrap_or_else(|_| {
+        hprintln!("init_board cv3_end_voltage_switch set_high error.").unwrap()
+    });
 
     //SWITCH_CV_n3 switch 0-10 / -5,5v  PH12
     let mut cv4_voltage_switch: hal::gpio::gpioh::PH12<hal::gpio::Output<hal::gpio::PushPull>> =
         gpioh.ph12.into_push_pull_output();
-    cv4_voltage_switch.set_low();
+    cv4_voltage_switch
+        .set_low()
+        .unwrap_or_else(|_| hprintln!("init_board cv4_voltage_switch set_low error.").unwrap());
 
     //SWITCH_CVn4_OUTSwitch 0-5v ou (0-10 / -5,5v)  PB12
     let mut cv4_end_voltage_switch: hal::gpio::gpiob::PB12<hal::gpio::Output<hal::gpio::PushPull>> =
         gpiob.pb12.into_push_pull_output();
-    cv4_end_voltage_switch.set_low();
+    cv4_end_voltage_switch
+        .set_low()
+        .unwrap_or_else(|_| hprintln!("init_board cv4_end_voltage_switch set_low error.").unwrap());
 
     //switch CV(5-6) out or  stéreo DAC:   SWITCH_CV_STEREO OUT: PG2
     let mut cv_st_out_switch = gpiog.pg2.into_push_pull_output();
-    cv_st_out_switch.set_low(); //no data
+    cv_st_out_switch
+        .set_low()
+        .unwrap_or_else(|_| hprintln!("init_board cv_st_out_switch set_low error.").unwrap()); //no data
 
     let board = SatinBoard {
         //      led_discovery: hal::gpio::gpiob::PB7<hal::gpio::Output<hal::gpio::PushPull>>
