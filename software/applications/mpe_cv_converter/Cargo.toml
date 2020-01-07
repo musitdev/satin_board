@@ -19,8 +19,8 @@ heapless = "0.4.1"
 arraydeque = { version = "0.4", default-features = false }
 
 [dependencies.cortex-m-rtfm]
-#version = "0.4.3"
-path="../../../../cortex-m-rtfm"
+version = "0.4.3"
+#path="../../../../cortex-m-rtfm"
 features = ["timer-queue"]
 
 [dependencies.stm32f7]
