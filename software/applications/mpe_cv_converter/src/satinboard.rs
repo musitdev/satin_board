@@ -7,18 +7,15 @@ use crate::ehal::digital::v2::OutputPin;
 use crate::ehal::spi::{Mode, Phase, Polarity};
 use crate::hal::{
     dac::{Dac, DacWord, DacWriter},
-    //    delay::Delay,
-    //    device,
-    gpio::*,
+    //   gpio::*,
     prelude::*,
-    serial::{Event, Serial},
+    serial::{self, Event, Serial},
     spi,
-    spi::{NoMiso, Spi},
+    spi::Spi,
     //    timer::{Event as TimerEvent, Timer},
 };
 use cortex_m::peripheral::DWT;
 use cortex_m_semihosting::hprintln;
-use nb::block;
 
 //pub const CONST_TIMER_FREQ: u32 = 1;
 
@@ -36,14 +33,26 @@ pub struct SatinBoard {
     pub note_velocity_dac: Dac,
     pub note_voltage_switch: hal::gpio::gpioa::PA0<hal::gpio::Output<hal::gpio::PushPull>>,
     pub velocity_voltage_switch: hal::gpio::gpioa::PA1<hal::gpio::Output<hal::gpio::PushPull>>,
-    pub spi2: Spi<
+    pub spi2: stm32f7xx_hal::spi::Spi<
         stm32f7::stm32f7x6::SPI2,
         (
-            gpiod::PD3<Alternate<AF5>>,
-            spi::NoMiso,
-            gpioi::PI3<Alternate<AF5>>,
+            stm32f7xx_hal::gpio::gpiod::PD3<
+                stm32f7xx_hal::gpio::Alternate<stm32f7xx_hal::gpio::AF5>,
+            >,
+            stm32f7xx_hal::spi::NoMiso,
+            stm32f7xx_hal::gpio::gpioi::PI3<
+                stm32f7xx_hal::gpio::Alternate<stm32f7xx_hal::gpio::AF5>,
+            >,
         ),
-    >,
+        stm32f7xx_hal::spi::Enabled<u16>,
+    >, /*Spi<
+           stm32f7::stm32f7x6::SPI2,
+           (
+               gpiod::PD3<Alternate<AF5>>,
+               spi::NoMiso,
+               gpioi::PI3<Alternate<AF5>>,
+           ),
+       >, */
     pub dac1cv_clear: hal::gpio::gpioi::PI2<hal::gpio::Output<hal::gpio::PushPull>>,
 
     pub nss_dac1: hal::gpio::gpioa::PA8<hal::gpio::Output<hal::gpio::PushPull>>,
@@ -109,27 +118,43 @@ impl SatinBoard {
 
 fn write_spi2<PIN>(
     data: u16,
-    spi2: &mut Spi<
+    spi2: &mut stm32f7xx_hal::spi::Spi<
         stm32f7::stm32f7x6::SPI2,
         (
-            gpiod::PD3<Alternate<AF5>>,
-            spi::NoMiso,
-            gpioi::PI3<Alternate<AF5>>,
+            stm32f7xx_hal::gpio::gpiod::PD3<
+                stm32f7xx_hal::gpio::Alternate<stm32f7xx_hal::gpio::AF5>,
+            >,
+            stm32f7xx_hal::spi::NoMiso,
+            stm32f7xx_hal::gpio::gpioi::PI3<
+                stm32f7xx_hal::gpio::Alternate<stm32f7xx_hal::gpio::AF5>,
+            >,
         ),
-    >,
+        stm32f7xx_hal::spi::Enabled<u16>,
+    >, /*&mut Spi<
+           stm32f7::stm32f7x6::SPI2,
+           (
+               gpiod::PD3<Alternate<AF5>>,
+               spi::NoMiso,
+               gpioi::PI3<Alternate<AF5>>,
+           ),
+       >, */
     nss: &mut PIN,
-) -> Result<(), nb::Error<stm32f7xx_hal::spi::Error>>
+) -> Result<(), nb::Error<hal::spi::Error>>
 where
     PIN: OutputPin,
 {
-    let valeur_dac: u16 = 0x3FFF & data; //clear control bit D15, D14
-    let valeur_dac: u16 = 0x4000 | valeur_dac; //set controle bit D14 up
+    //    let valeur_dac: u16 = 0x3FFF & data; //clear control bit D15, D14
+    //    let valeur_dac: u16 = 0x4000 | valeur_dac; //set controle bit D14 up
+
+    let word: u16 = (0b01 << 14) |   // write-through mode
+            (data & 0x3fff); // data bits
 
     nss.set_low()
         .unwrap_or_else(|_| hprintln!("write_spi2 nss set low error.").unwrap());
-    if let Err(err) = block!(spi2.send_only_16b(valeur_dac)) {
+    if let Err(err) = spi2.write(&[word]) {
         return Err(nb::Error::Other(err));
     }
+
     /*    if let Err(err) = spi2.read() {
         //read one time at the end to end the transation and way the end of the send
         match err {
@@ -158,9 +183,40 @@ pub fn init_board(
     //    Timer<stm32f7::stm32f7x6::TIM2>,
     SatinBoard,
 ) {
-    let rcc = device.RCC.constrain();
+    let mut rcc = device.RCC.constrain();
+
+    let gpiod = device.GPIOD.split();
+    let gpioi = device.GPIOI.split();
+    //init SPIT before sysclk int that borrow rcc
+    //Dac1, Dac2, Dac 3 Dac 4 are controled via SPI2
+    //SPI2:
+    /*SPI2 GPIO Configuration
+    PD3     ------> SPI2_SCK
+    pas de SPI2 MISO.
+    PI3     ------> SPI2_MOSI
+    */
+    let sck = gpiod.pd3.into_alternate_af5();
+    //    let miso = NoMiso;
+    let mosi = gpioi.pi3.into_alternate_af5();
+
+    let spi2 = Spi::new(device.SPI2, (sck, spi::NoMiso, mosi)).enable::<u16>(
+        &mut rcc,
+        spi::ClockDivider::DIV32,
+        embedded_hal::spi::MODE_0,
+    );
+
+    /*    Spi::spi2(
+        device.SPI2,
+        (sck, miso, mosi),
+        MODE,
+        // 1.mhz(),
+        100.khz().into(),
+        clocks,
+    ); */
+
     let clocks = rcc.cfgr.sysclk(216.mhz()).freeze();
 
+    //write DWT to activate RTFM timer.
     unsafe { (*DWT::ptr()).lar.write(0xC5ACCE55) };
 
     //        let clocks = rcc.cfgr.sysclk(180.mhz()).freeze();
@@ -171,13 +227,19 @@ pub fn init_board(
     let gpioa = device.GPIOA.split();
     let gpiob = device.GPIOB.split();
     let gpioc = device.GPIOC.split();
-    let gpiod = device.GPIOD.split();
 
     let tx = gpiod.pd5.into_alternate_af7();
     let rx = gpiod.pd6.into_alternate_af7();
     //        let mut serial = Serial::usart2(device.USART2, (tx, rx), 115_200.bps(), clocks, false);
-    let mut serial = Serial::usart2(device.USART2, (tx, rx), 31_250.bps(), clocks, true);
-
+    let mut serial = Serial::new(
+        device.USART2,
+        (tx, rx),
+        clocks,
+        serial::Config {
+            baud_rate: 31_250.bps(),
+            oversampling: serial::Oversampling::By16,
+        },
+    );
     //        serial.listen(Event::Txe);
     serial.listen(Event::Rxne);
 
@@ -187,7 +249,6 @@ pub fn init_board(
 
     let gpiog = device.GPIOG.split();
     let gpioh = device.GPIOH.split();
-    let gpioi = device.GPIOI.split();
 
     //init led 1 to high
     let mut led1: hal::gpio::gpioh::PH3<hal::gpio::Output<hal::gpio::PushPull>> =
@@ -285,26 +346,6 @@ pub fn init_board(
     nss_dac4
         .set_high()
         .unwrap_or_else(|_| hprintln!("init_board nss_dac4 set_high error.").unwrap()); //no data
-
-    //Dac1, Dac2, Dac 3 Dac 4 are controled via SPI2
-    //SPI2:
-    /*SPI2 GPIO Configuration
-    PD3     ------> SPI2_SCK
-    pas de SPI2 MISO.
-    PI3     ------> SPI2_MOSI
-    */
-    let sck = gpiod.pd3.into_alternate_af5();
-    let miso = NoMiso;
-    let mosi = gpioi.pi3.into_alternate_af5();
-
-    let spi2 = Spi::spi2(
-        device.SPI2,
-        (sck, miso, mosi),
-        MODE,
-        // 1.mhz(),
-        100.khz().into(),
-        clocks,
-    );
 
     //DAC-CV clear init PI2
     let mut dac1cv_clear: hal::gpio::gpioi::PI2<hal::gpio::Output<hal::gpio::PushPull>> =
