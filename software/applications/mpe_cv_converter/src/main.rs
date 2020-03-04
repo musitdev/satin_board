@@ -62,9 +62,6 @@ const APP: () = {
         TIMESTAMP: u64,
         MESSAGE_BUF: ArrayDeque<[satinapi::midi::MidiEvent; 4], Wrapping>,
         MPE_MANAGER: satinapi::mpe::MonoNoteMPEManager,
-        RX_BUF: satinapi::midi::MidiBuffer,
-        TX: Tx<pac::USART2>,
-        RX: Rx<pac::USART2>,
         BOARD: crate::satinboard::SatinBoard,
     }
 
@@ -78,7 +75,7 @@ const APP: () = {
 
         let device: processor_hal::device::Peripherals = cx.device;
 
-        let (tx, rx, mut satinboard) = crate::satinboard::init_board(device);
+        let mut satinboard = crate::satinboard::init_board(device);
         cx.schedule
             .tick(Instant::now() + 8_000_000.cycles())
             .unwrap();
@@ -92,9 +89,6 @@ const APP: () = {
         init::LateResources {
             MESSAGE_BUF: ArrayDeque::new(),
             MPE_MANAGER: satinapi::mpe::MonoNoteMPEManager::new(),
-            RX_BUF: satinapi::midi::MidiBuffer::new(),
-            TX: tx,
-            RX: rx,
             BOARD: satinboard,
         }
     }
@@ -112,12 +106,12 @@ const APP: () = {
         } */
 
     // `SHARED` can be access from this context
-    #[task(priority = 1, resources = [TIMESTAMP, TX,ON, BOARD], schedule = [tick])]
+    #[task(priority = 1, resources = [TIMESTAMP,ON, BOARD], schedule = [tick])]
     fn tick(mut cx: tick::Context) {
         //        static mut BLINK: bool = false;
         cx.resources.TIMESTAMP.lock(|timestamp| *timestamp += 1);
         //        *resources.TIMESTAMP = *resources.TIMESTAMP + 1;
-        cx.resources.TX.lock(|tx| {
+        cx.resources.BOARD.lock(|board| {
             [0x90 as u8, 0x35 as u8, 0x15 as u8].iter().for_each(|b| {
                 //write_byte(*b, &mut tx);
                 /*            if resources.MIDIOUT_BUF.enqueue(*b).is_err() {
@@ -148,35 +142,29 @@ const APP: () = {
         cx.schedule.tick(cx.scheduled + 8_000_000.cycles()).unwrap();
     }
 
-    #[task(binds = USART2, priority = 4, resources=[RX,RX_BUF, TX, BOARD, MESSAGE_BUF, TIMESTAMP, ON], spawn = [manage_midi_input, show_error, show_string])]
+    #[task(binds = USART2, priority = 4, resources=[BOARD, MESSAGE_BUF, TIMESTAMP, ON], spawn = [manage_midi_input, show_error, show_string])]
     fn usart2(mut cx: usart2::Context) {
-        match block!(cx.resources.RX.read()) {
-            Ok(c) => {
-                //hprintln!("c:{}", c).unwrap();
-                if let Some(message) = cx.resources.RX_BUF.push_byte(c) {
-                    let event = satinapi::midi::MidiEvent {
-                        message,
-                        timestamp: *cx.resources.TIMESTAMP,
-                    };
-
-                    if cx.resources.MESSAGE_BUF.push_front(event).is_some() {
-                        cx.spawn
-                            .show_string("Error input midi buf queue full lost byte.".into())
-                            .unwrap();
-                    } else {
-                        //TODO use message to send the event.
-                        cx.spawn.manage_midi_input().unwrap(); //fail if the 4 capacity task is currently executing.
-                    }
+        match cx.resources.BOARD.read_one_byte() {
+            Ok(Some(mut midi_event)) => {
+                midi_event.timestamp = *cx.resources.TIMESTAMP;
+                if cx.resources.MESSAGE_BUF.push_front(midi_event).is_some() {
+                    cx.spawn
+                        .show_string("Error input midi buf queue full lost byte.".into())
+                        .unwrap();
+                } else {
+                    //TODO use message to send the event.
+                    cx.spawn.manage_midi_input().unwrap(); //fail if the 4 capacity task is currently executing.
                 }
                 *cx.resources.ON = !*cx.resources.ON;
             }
+            Ok(None) => (),
             Err(e) => {
                 cx.spawn.show_error(nb::Error::Other(e)).unwrap();
             }
         }
     }
 
-    #[task(priority = 2, resources=[MESSAGE_BUF, TX, BOARD, MPE_MANAGER], spawn = [show_error, show_string], capacity = 4)]
+    #[task(priority = 2, resources=[MESSAGE_BUF, BOARD, MPE_MANAGER], spawn = [show_error, show_string], capacity = 4)]
     fn manage_midi_input(mut cx: manage_midi_input::Context) {
         //hprintln!("manage_usart_input").unwrap();
         let mut mess_opt = None;
@@ -186,7 +174,6 @@ const APP: () = {
         if let Some(midi_event) = mess_opt {
             let mpe_event = cx.resources.MPE_MANAGER.manage_message(midi_event.message);
             //hprintln!("manage_midi_input mpe_event:{:?}", mpe_event).unwrap();
-            //let board: &mut crate::satinboard::SatinBoard = cx.resources.BOARD;
             match mpe_event {
                 satinapi::mpe::MPEEvent::NoEvent => {}
                 satinapi::mpe::MPEEvent::GlobalNoteChange { control, value } => {
@@ -228,9 +215,11 @@ const APP: () = {
                 satinapi::mpe::MPEEvent::OtherMPE(midi_event) => {
                     //TODO write to the output.
                     let buf: [u8; 3] = midi_event.into();
-                    cx.resources.TX.lock(|tx| {
+                    cx.resources.BOARD.lock(|board| {
                         buf.iter().for_each(|b| {
-                            //write_byte(*b, &mut tx);
+                            if let Err(err) = board.write_byte_on_serial(*b) {
+                                hprintln!("Write serial error:{:?}", err).unwrap();
+                            }
                         })
                     });
                 }
@@ -260,10 +249,10 @@ const APP: () = {
     }
 };
 
-pub fn write_byte(b: u8, tx: &mut stm32f7xx_hal::serial::Tx<pac::USART2>) {
+/*pub fn write_byte(b: u8, tx: &mut stm32f7xx_hal::serial::Tx<pac::USART2>) {
     //hprintln!("Wb:{:?}", b).unwrap();
     while let Err(err) = block!(tx.write(b)) {
         hprintln!("Write serial error:{:?}", err).unwrap();
     }
     block!(tx.flush());
-}
+} */

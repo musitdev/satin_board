@@ -8,10 +8,11 @@ use crate::ehal::digital::v2::OutputPin;
 //use crate::ehal::spi::{Mode, Phase, Polarity};
 use cortex_m::peripheral::DWT;
 use cortex_m_semihosting::hprintln;
+use nb::block;
 use processor_hal::{
     //   gpio::*,
     prelude::*,
-    serial::{self, Event, Serial},
+    serial::{self, Event, Rx, Serial, Tx},
     spi::{self, Spi},
     //    timer::{Event as TimerEvent, Timer},
 };
@@ -62,9 +63,33 @@ pub struct SatinBoard {
         processor_hal::gpio::gpiod::PD0<processor_hal::gpio::Output<processor_hal::gpio::PushPull>>,
     pub nss_dac4:
         processor_hal::gpio::gpiod::PD1<processor_hal::gpio::Output<processor_hal::gpio::PushPull>>,
+    pub tx: Tx<pac::USART2>,
+    pub rx: Rx<pac::USART2>,
+    pub rx_buf: satinapi::midi::MidiBuffer,
 }
 
 impl SatinBoard {
+    pub fn read_one_byte(
+        &mut self,
+    ) -> Result<Option<satinapi::midi::MidiEvent>, processor_hal::serial::Error> {
+        let c = block!(self.rx.read())?;
+        if let Some(message) = self.rx_buf.push_byte(c) {
+            Ok(Some(satinapi::midi::MidiEvent {
+                message,
+                timestamp: 0,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn write_byte_on_serial(&mut self, byte: u8) -> Result<(), processor_hal::serial::Error> {
+        //hprintln!("Wb:{:?}", b).unwrap();
+        block!(self.tx.write(byte))?;
+        block!(self.tx.flush())?;
+        Ok(())
+    }
+
     pub fn output_note(&mut self, note: u8, velocity: u8) {
         if velocity == 0 {
             self.output_note_off();
@@ -178,14 +203,7 @@ where
     Ok(())
 }
 
-pub fn init_board(
-    device: pac::Peripherals,
-) -> (
-    processor_hal::serial::Tx<pac::USART2>,
-    processor_hal::serial::Rx<pac::USART2>,
-    //    Timer<stm32f7::stm32f7x6::TIM2>,
-    SatinBoard,
-) {
+pub fn init_board(device: pac::Peripherals) -> SatinBoard {
     let mut rcc = device.RCC.constrain();
 
     let gpiod = device.GPIOD.split();
@@ -419,8 +437,11 @@ pub fn init_board(
         nss_dac2,
         nss_dac3,
         nss_dac4,
+        tx,
+        rx,
+        rx_buf: satinapi::midi::MidiBuffer::new(),
     };
     hprintln!("end board init").unwrap();
 
-    (tx, rx, board)
+    board
 }
